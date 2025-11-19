@@ -1,0 +1,44 @@
+name: Deploy static site to GitHub Pages
+
+on:
+  push:
+    branches: [ main ]
+
+# Permissions required to publish to GitHub Pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    name: Package site
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # If your site needs a build step (Hugo, Jekyll, Svelte, etc.), run it here
+      # - name: Setup Node.js
+      #   uses: actions/setup-node@v4
+      #   with:
+      #     node-version: '18'
+      # - name: Install dependencies
+      #   run: npm ci
+      # - name: Build
+      #   run: npm run build
+      # and set `path` below to the build output folder (e.g. ./public or ./dist)
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v1
+        with:
+          path: './' # change to ./public or ./dist if you build into another folder
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy
+        uses: actions/deploy-pages@v1
+        
