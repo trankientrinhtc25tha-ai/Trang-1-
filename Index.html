@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Gallery — Đăng ảnh & video</title>
+  <meta name="description" content="Một trang chủ đơn giản để đăng ảnh và video (tĩnh) - đặt trên GitHub Pages." />
+  <style>
+    :root{--bg:#0f172a;--card:#0b1220;--muted:#9aa4b2;--accent:#06b6d4}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Inter,ui-sans-serif,system-ui,Roboto,'Segoe UI',Arial;background:linear-gradient(180deg,#071129 0%,#071726 100%);color:#e6eef6}
+    .wrap{max-width:1100px;margin:28px auto;padding:20px}
+    header{display:flex;align-items:center;gap:16px}
+    .logo{width:56px;height:56px;border-radius:12px;background:linear-gradient(135deg,var(--accent),#7c3aed);display:flex;align-items:center;justify-content:center;font-weight:700}
+    h1{margin:0;font-size:20px}
+    p.lead{margin:6px 0 0;color:var(--muted)}
+    .controls{display:flex;gap:12px;flex-wrap:wrap;margin-top:18px}
+    .btn{background:var(--accent);border:none;padding:10px 14px;border-radius:10px;color:#032029;cursor:pointer;font-weight:600}
+    .btn.secondary{background:transparent;color:var(--muted);border:1px solid rgba(255,255,255,0.04)}
+    .drop{margin-top:14px;border:2px dashed rgba(255,255,255,0.04);padding:18px;border-radius:12px;display:flex;align-items:center;justify-content:center;min-height:96px}
+    input[type=file]{display:none}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-top:18px}
+    .card{background:linear-gradient(180deg,rgba(255,255,255,0.02),transparent);padding:8px;border-radius:10px;position:relative;overflow:hidden}
+    .thumb{width:100%;height:140px;object-fit:cover;border-radius:6px;background:#061022}
+    .meta{display:flex;justify-content:space-between;align-items:center;margin-top:8px;font-size:13px;color:var(--muted)}
+    .icon{opacity:0.9}
+    .badge{font-size:12px;padding:6px;border-radius:8px;background:rgba(255,255,255,0.03)}
+    .trash{position:absolute;top:8px;right:8px;background:rgba(0,0,0,0.4);border-radius:6px;padding:6px;cursor:pointer}
+    .modal{position:fixed;inset:0;background:rgba(2,6,23,0.7);display:none;align-items:center;justify-content:center;padding:20px}
+    .modal.open{display:flex}
+    .viewer{max-width:1000px;width:100%;background:var(--card);border-radius:12px;overflow:hidden}
+    .viewer-media{width:100%;height:70vh;display:flex;align-items:center;justify-content:center;background:#000}
+    .viewer-media img,.viewer-media video{max-width:100%;max-height:100%;display:block}
+    .viewer-meta{padding:12px;display:flex;justify-content:space-between;align-items:center}
+    .small{font-size:13px;color:var(--muted)}
+    footer{margin-top:18px;color:var(--muted);font-size:13px}
+    @media (max-width:520px){.viewer-media{height:50vh}.thumb{height:110px}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div class="logo">G</div>
+      <div>
+        <h1>Gallery — Đăng ảnh & video</h1>
+        <p class="lead">Trang chủ mẫu để hiển thị ảnh và clip. Tải lên sẽ lưu tạm vào trình duyệt (localStorage).</p>
+      </div>
+    </header>
+
+    <div class="controls">
+      <label class="btn" id="btnSelect">Tải ảnh/clip lên
+        <input id="fileInput" type="file" accept="image/*,video/*" multiple>
+      </label>
+      <button class="btn secondary" id="btnClear">Xóa toàn bộ</button>
+      <div style="margin-left:auto;color:var(--muted);align-self:center" id="count">0 mục</div>
+    </div>
+
+    <div class="drop" id="dropArea">Kéo & thả ảnh hoặc video vào đây — hoặc bấm "Tải ảnh/clip lên"</div>
+
+    <div class="grid" id="grid"></div>
+
+    <footer>
+      <div>Hướng dẫn nhanh để đưa lên GitHub Pages: tạo repository -> thêm file <code>index.html</code> (nội dung trang này) vào root -> Settings &gt; Pages &gt; Source = main (branch) / (root). Sau khi publish, trang sẽ hiển thị tại <em>https://<your-username>.github.io/<repo-name>/</em></div>
+      <div style="margin-top:6px">Ghi chú: phiên bản này lưu tệp trong trình duyệt (không upload lên server). Nếu muốn người khác có thể đăng ảnh trực tiếp lên site, bạn cần backend (ví dụ Firebase Storage, Netlify Functions, hoặc GitHub API + OAuth).</div>
+    </footer>
+  </div>
+
+  <div class="modal" id="modal"><div class="viewer" role="dialog" aria-modal="true">
+    <div class="viewer-media" id="viewerMedia"></div>
+    <div class="viewer-meta"><div class="small" id="viewerInfo">—</div><div><button class="btn" id="closeViewer">Đóng</button></div></div>
+  </div></div>
+
+  <script>
+    // Simple client-side gallery: stores files (as data URLs) in localStorage.
+    // Limit: localStorage size ~5-10MB depending on browser. Large videos will fail.
+
+    const fileInput = document.getElementById('fileInput');
+    const dropArea = document.getElementById('dropArea');
+    const grid = document.getElementById('grid');
+    const btnClear = document.getElementById('btnClear');
+    const count = document.getElementById('count');
+    const modal = document.getElementById('modal');
+    const viewerMedia = document.getElementById('viewerMedia');
+    const viewerInfo = document.getElementById('viewerInfo');
+    const closeViewer = document.getElementById('closeViewer');
+
+    const STORAGE_KEY = 'gh_gallery_items_v1';
+
+    function loadItems(){
+      try{ const raw = localStorage.getItem(STORAGE_KEY); return raw?JSON.parse(raw):[] }catch(e){return[]}
+    }
+    function saveItems(items){ localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); }
+
+    function render(){
+      const items = loadItems();
+      grid.innerHTML = '';
+      items.forEach((it, idx)=>{
+        const card = document.createElement('div'); card.className='card';
+        const mediaEl = document.createElement(it.type.startsWith('image')? 'img':'video');
+        mediaEl.className='thumb';
+        if(it.type.startsWith('video')){ mediaEl.controls = false; mediaEl.muted=true; mediaEl.loop=true; mediaEl.autoplay=true }
+        mediaEl.src = it.data;
+        mediaEl.addEventListener('click', ()=> openViewer(it));
+        card.appendChild(mediaEl);
+
+        const m = document.createElement('div'); m.className='meta';
+        m.innerHTML = `<div class="badge">${it.type.split('/')[0].toUpperCase()}</div><div class="small">${it.name || 'Không tên'}</div>`;
+        card.appendChild(m);
+
+        const t = document.createElement('div'); t.className='trash'; t.innerHTML='🗑️';
+        t.title = 'Xóa mục này'; t.addEventListener('click', (e)=>{ e.stopPropagation(); deleteItem(idx); });
+        card.appendChild(t);
+
+        grid.appendChild(card);
+      });
+      count.textContent = `${items.length} mục`;
+    }
+
+    function deleteItem(index){
+      const items = loadItems(); items.splice(index,1); saveItems(items); render();
+    }
+
+    function openViewer(item){
+      viewerMedia.innerHTML='';
+      if(item.type.startsWith('image')){
+        const img = document.createElement('img'); img.src = item.data; viewerMedia.appendChild(img);
+      } else {
+        const v = document.createElement('video'); v.src = item.data; v.controls=true; v.autoplay=true; viewerMedia.appendChild(v);
+      }
+      viewerInfo.textContent = item.name || 'Không tên';
+      modal.classList.add('open');
+    }
+
+    closeViewer.addEventListener('click', ()=> modal.classList.remove('open'));
+    modal.addEventListener('click', (e)=>{ if(e.target === modal) modal.classList.remove('open'); });
+
+    function handleFiles(fileList){
+      const items = loadItems();
+      const files = Array.from(fileList).slice(0,20); // safety
+      let i = 0;
+      function next(){
+        if(i>=files.length){ saveItems(items); render(); return }
+        const f = files[i++];
+        if(!f.type.startsWith('image') && !f.type.startsWith('video')) return next();
+        const reader = new FileReader();
+        reader.onload = function(ev){
+          items.push({name:f.name,type:f.type,data:ev.target.result,ts:Date.now()});
+          // prevent localStorage overflow by trimming if > 30 items
+          if(items.length>30) items.splice(0, items.length-30);
+          next();
+        }
+        reader.onerror = function(){ next(); }
+        // limit reading very large files (videos) to avoid freezing
+        const maxBytes = 2 * 1024 * 1024; // 2MB per file approx
+        if(f.size > 15 * 1024 * 1024){ alert('Tệp quá lớn: '+f.name+'\nKích thước lớn có thể gây lỗi khi lưu vào trình duyệt. Hãy upload file nhỏ hơn 15MB.'); next(); }
+        else reader.readAsDataURL(f);
+      }
+      next();
+    }
+
+    fileInput.addEventListener('change', (e)=>{ handleFiles(e.target.files); fileInput.value=''; });
+
+    ['dragenter','dragover'].forEach(ev=> dropArea.addEventListener(ev,(e)=>{ e.preventDefault(); dropArea.style.borderColor='rgba(255,255,255,0.12)'; }));
+    ['dragleave','drop'].forEach(ev=> dropArea.addEventListener(ev,(e)=>{ e.preventDefault(); dropArea.style.borderColor='rgba(255,255,255,0.04)'; }));
+    dropArea.addEventListener('drop',(e)=>{ if(e.dataTransfer.files && e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
+
+    btnClear.addEventListener('click', ()=>{ if(confirm('Xóa toàn bộ mục trong gallery?')){ localStorage.removeItem(STORAGE_KEY); render(); } });
+
+    // init
+    render();
+
+    // keyboard shortcut: N để mở file picker
+    window.addEventListener('keydown',(e)=>{ if(e.key==='n' || e.key==='N'){ fileInput.click(); } });
+  </script>
+</body>
+</html>
